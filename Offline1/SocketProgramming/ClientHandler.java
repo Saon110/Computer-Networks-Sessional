@@ -374,11 +374,9 @@ public class ClientHandler extends Thread {
         long fileSize = file.length();
         int numChunks = (int) ((fileSize + Server.MAX_CHUNK_SIZE - 1) / Server.MAX_CHUNK_SIZE);
         
-        // Send download start via DataOutputStream for proper synchronization
-        String startMsg = String.format("DOWNLOAD_START|%s|%d|%d\n",
-            metadata.getFilename(), fileSize, numChunks);
-        dos.write(startMsg.getBytes());
-        dos.flush();
+        // Send download start using writeUTF for proper synchronization
+        sendMessage(String.format("DOWNLOAD_START|%s|%d|%d",
+            metadata.getFilename(), fileSize, numChunks));
         
         // Send chunks
         FileInputStream fis = new FileInputStream(file);
@@ -387,12 +385,10 @@ public class ClientHandler extends Thread {
         int bytesRead;
         
         while ((bytesRead = fis.read(buffer)) > 0) {
-            // Send chunk header via DataOutputStream for proper synchronization
-            String header = String.format("DOWNLOAD_CHUNK|%d|%d\n", chunkNumber, bytesRead);
-            dos.write(header.getBytes());
-            dos.flush();
+            // Send chunk header using writeUTF for proper synchronization
+            sendMessage(String.format("DOWNLOAD_CHUNK|%d|%d", chunkNumber, bytesRead));
             
-            // Send chunk data
+            // Send chunk data (raw bytes)
             dos.write(buffer, 0, bytesRead);
             dos.flush();
             
@@ -401,9 +397,8 @@ public class ClientHandler extends Thread {
         
         fis.close();
         
-        // Send completion via DataOutputStream
-        dos.write("DOWNLOAD_COMPLETE\n".getBytes());
-        dos.flush();
+        // Send completion using writeUTF for proper synchronization
+        sendMessage("DOWNLOAD_COMPLETE");
         
         // Log download
         server.addLog(username, "DOWNLOAD", metadata.getFilename(), "SUCCESS");
