@@ -485,8 +485,10 @@ public class ClientHandler extends Thread {
         response.append("|").append(unread.size());
         
         for (Message msg : unread) {
+            // Extract description from content for better display
+            String displayContent = msg.getContent();
             String formatted = String.format("%s from %s: %s",
-                msg.getMessageType(), msg.getFrom(), msg.getContent());
+                msg.getMessageType(), msg.getFrom(), displayContent);
             response.append("|").append(formatted);
             msg.setRead(true);  // Mark as read
         }
@@ -497,12 +499,20 @@ public class ClientHandler extends Thread {
     private void handleViewLogs() {
         List<LogEntry> logs = server.getUserLogs().get(username);
         
+        // Filter out LOGIN logs, show only UPLOAD and DOWNLOAD
+        List<LogEntry> filteredLogs = new ArrayList<>();
+        for (LogEntry log : logs) {
+            if (log.getAction().equals("UPLOAD") || log.getAction().equals("DOWNLOAD")) {
+                filteredLogs.add(log);
+            }
+        }
+        
         StringBuilder response = new StringBuilder("LOGS_RESPONSE");
-        response.append("|").append(logs.size());
+        response.append("|").append(filteredLogs.size());
         
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         
-        for (LogEntry log : logs) {
+        for (LogEntry log : filteredLogs) {
             String formatted = String.format("%s | %s | %s | %s",
                 sdf.format(new Date(log.getTimestamp())),
                 log.getAction(),
@@ -536,12 +546,8 @@ public class ClientHandler extends Thread {
             // Remove from online clients
             server.getOnlineClients().remove(username);
             
-            // Delete user directory
-            File userDir = new File(Server.BASE_DIRECTORY + username);
-            deleteDirectory(userDir);
-            
-            // Remove user data
-            server.removeUserData(username);
+            // Don't delete user directory or data - keep files and logs while server runs
+            // User data persists for the lifetime of the server
         }
         
         try {
