@@ -289,10 +289,22 @@ public class Client {
         if (parts[0].equals("UPLOAD_APPROVED")) {
             String fileID = parts[1];
             int chunkSize = Integer.parseInt(parts[2]);
-            System.out.println("Upload approved! FileID: " + fileID);
-            System.out.println("Chunk size: " + chunkSize + " bytes");
+            System.out.println("\nServer approved upload:");
+            System.out.println("  FileID: " + fileID);
+            System.out.println("  Chunk size: " + chunkSize + " bytes");
+            
+            // Ask for confirmation
+            System.out.print("Confirm upload? (yes/no): ");
+            String confirm = scanner.nextLine().trim();
+            
+            if (!confirm.equalsIgnoreCase("yes")) {
+                System.out.println("Upload cancelled.");
+                    sendMessage("UPLOAD_CANCEL|" + fileID);
+                return;
+            }
             
             // Start chunk upload
+            System.out.println("Starting upload...");
             uploadChunks(file, fileID, chunkSize);
         }
     }

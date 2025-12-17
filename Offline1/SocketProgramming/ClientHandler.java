@@ -134,6 +134,9 @@ public class ClientHandler extends Thread {
                 case "UPLOAD_CHUNK":
                     handleUploadChunk(parts);
                     break;
+                case "UPLOAD_CANCEL":
+                    handleUploadCancel(parts[1]);
+                    break;
                 case "UPLOAD_COMPLETE":
                     handleUploadComplete(parts[1]);
                     break;
@@ -163,11 +166,20 @@ public class ClientHandler extends Thread {
 
     private void handleListClients() {
         StringBuilder response = new StringBuilder("CLIENTS_RESPONSE");
-        List<String> clients = new ArrayList<>(server.getOnlineClients().keySet());
-        response.append("|").append(clients.size());
         
-        for (String user : clients) {
-            response.append("|").append(user).append("|ONLINE");
+        // Get all users who have ever logged in (have files/logs data)
+        Set<String> allUsers = new HashSet<>();
+        allUsers.addAll(server.getUserFiles().keySet());
+        allUsers.addAll(server.getUserLogs().keySet());
+        
+        // Get online users
+        Set<String> onlineUsers = server.getOnlineClients().keySet();
+        
+        response.append("|").append(allUsers.size());
+        
+        for (String user : allUsers) {
+            String status = onlineUsers.contains(user) ? "ONLINE" : "OFFLINE";
+            response.append("|").append(user).append("|").append(status);
         }
         
         try { sendMessage(response.toString()); } catch (IOException e) { e.printStackTrace(); }
@@ -283,6 +295,15 @@ public class ClientHandler extends Thread {
         // Send ACK
         try { sendMessage("CHUNK_ACK|" + chunkNumber); } catch (IOException e) { e.printStackTrace(); }
     }
+    
+    private void handleUploadCancel(String fileID) {
+        FileUploadSession session = server.getActiveUploads().get(fileID);
+        if (session != null) {
+            server.getActiveUploads().remove(fileID);
+            server.addLog(username, "UPLOAD", session.getFilename(), "CANCELLED");
+            System.out.println("Upload cancelled by client: " + fileID);
+        }
+    }
 
     private void handleUploadComplete(String fileID) throws IOException {
         FileUploadSession session = server.getActiveUploads().get(fileID);
@@ -323,6 +344,9 @@ public class ClientHandler extends Thread {
         );
         
         server.getUserFiles().get(username).add(metadata);
+        
+        // Save metadata to disk for persistence
+        saveFileMetadata(fileID, session.getFilename(), session.isPublic());
         
         // If uploaded for request, notify requester
         if (session.getRequestID() != null) {
@@ -513,7 +537,8 @@ public class ClientHandler extends Thread {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         
         for (LogEntry log : filteredLogs) {
-            String formatted = String.format("%s | %s | %s | %s",
+            // Format without pipes to avoid splitting issues - use semicolon as internal separator
+            String formatted = String.format("%s ; %s ; %s ; %s",
                 sdf.format(new Date(log.getTimestamp())),
                 log.getAction(),
                 log.getFilename(),
@@ -523,6 +548,19 @@ public class ClientHandler extends Thread {
         
         try { sendMessage(response.toString()); } catch (IOException e) { e.printStackTrace(); }
     }
+    
+    private void saveFileMetadata(String fileID, String filename, boolean isPublic) {
+        try {
+            File metadataFile = new File(Server.BASE_DIRECTORY + username + "/files/" + fileID + "_" + filename + ".meta");
+            FileWriter fw = new FileWriter(metadataFile);
+            PrintWriter pw = new PrintWriter(fw);
+            pw.println(isPublic ? "public" : "private");
+            pw.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+    
     private void closeConnection() {
         isRunning = false;
         try {

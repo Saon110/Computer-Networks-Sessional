@@ -129,9 +129,19 @@ public class Server {
 
     public synchronized long getCurrentBufferSize() {
         long total = 0;
+        
+        // Count chunks in active uploads (being uploaded right now)
         for (FileUploadSession session : activeUploads.values()) {
             total += session.getTotalBufferSize();
         }
+        
+        // Count all completed files stored on server
+        for (List<FileMetadata> userFileList : userFiles.values()) {
+            for (FileMetadata file : userFileList) {
+                total += file.getFileSize();
+            }
+        }
+        
         return total;
     }
 
@@ -176,6 +186,80 @@ public class Server {
         
         // Load existing logs from disk if available
         loadLogsFromDisk(username);
+        
+        // Load existing files from disk if available
+        loadFilesFromDisk(username);
+    }
+    
+    private void loadFilesFromDisk(String username) {
+        try {
+            File userFilesDir = new File(BASE_DIRECTORY + username + "/files");
+            if (!userFilesDir.exists()) {
+                return;
+            }
+            
+            File[] files = userFilesDir.listFiles();
+            if (files == null) {
+                return;
+            }
+            
+            for (File file : files) {
+                if (file.isFile()) {
+                    // Parse filename format: fileID_originalName
+                    String filename = file.getName();
+                    int underscoreIndex = filename.indexOf('_');
+                    
+                    if (underscoreIndex > 0) {
+                        String fileID = filename.substring(0, underscoreIndex);
+                        String originalName = filename.substring(underscoreIndex + 1);
+                        
+                        // Check if this file is already in memory
+                        boolean exists = false;
+                        for (FileMetadata fm : userFiles.get(username)) {
+                            if (fm.getFileID().equals(fileID)) {
+                                exists = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!exists) {
+                            // Create FileMetadata - check metadata file for public/private status
+                            boolean isPublic = checkIfFileIsPublic(username, fileID, originalName);
+                            FileMetadata metadata = new FileMetadata(
+                                fileID,
+                                originalName,
+                                username,
+                                file.length(),
+                                isPublic,
+                                null, // requestID unknown from disk
+                                file.lastModified(),
+                                file.getAbsolutePath()
+                            );
+                            userFiles.get(username).add(metadata);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private boolean checkIfFileIsPublic(String username, String fileID, String filename) {
+        // Check if metadata file exists
+        File metadataFile = new File(BASE_DIRECTORY + username + "/files/" + fileID + "_" + filename + ".meta");
+        if (metadataFile.exists()) {
+            try {
+                BufferedReader br = new BufferedReader(new FileReader(metadataFile));
+                String line = br.readLine();
+                br.close();
+                return "public".equals(line);
+            } catch (IOException e) {
+                return false;
+            }
+        }
+        
+        return false; // default to private if no metadata file
     }
     
     private void loadLogsFromDisk(String username) {
