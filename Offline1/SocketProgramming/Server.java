@@ -59,6 +59,8 @@ import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.List;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 public class Server {
     public static final int PORT = 5000;
@@ -136,12 +138,77 @@ public class Server {
     public synchronized void addLog(String username, String action, String filename, String status) {
         LogEntry entry = new LogEntry(action, filename, status, System.currentTimeMillis());
         userLogs.get(username).add(entry);
+        
+        // Write to log file on disk
+        writeLogToDisk(username, entry);
+    }
+    
+    private void writeLogToDisk(String username, LogEntry entry) {
+        try {
+            File userDir = new File(BASE_DIRECTORY + username);
+            if (!userDir.exists()) {
+                userDir.mkdirs();
+            }
+            
+            File logFile = new File(userDir, "log.txt");
+            FileWriter fw = new FileWriter(logFile, true); // append mode
+            BufferedWriter bw = new BufferedWriter(fw);
+            PrintWriter pw = new PrintWriter(bw);
+            
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            String logLine = String.format("%s | %s | %s | %s",
+                sdf.format(new Date(entry.getTimestamp())),
+                entry.getAction(),
+                entry.getFilename(),
+                entry.getStatus());
+            
+            pw.println(logLine);
+            pw.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public synchronized void initializeUserData(String username) {
         userFiles.putIfAbsent(username, new CopyOnWriteArrayList<>());
         userMessages.putIfAbsent(username, new CopyOnWriteArrayList<>());
         userLogs.putIfAbsent(username, new CopyOnWriteArrayList<>());
+        
+        // Load existing logs from disk if available
+        loadLogsFromDisk(username);
+    }
+    
+    private void loadLogsFromDisk(String username) {
+        try {
+            File logFile = new File(BASE_DIRECTORY + username + "/log.txt");
+            if (!logFile.exists()) {
+                return;
+            }
+            
+            BufferedReader br = new BufferedReader(new FileReader(logFile));
+            String line;
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.split(" \\| ");
+                if (parts.length == 4) {
+                    try {
+                        long timestamp = sdf.parse(parts[0]).getTime();
+                        String action = parts[1];
+                        String filename = parts[2];
+                        String status = parts[3];
+                        
+                        LogEntry entry = new LogEntry(action, filename, status, timestamp);
+                        userLogs.get(username).add(entry);
+                    } catch (Exception e) {
+                        // Skip malformed log lines
+                    }
+                }
+            }
+            br.close();
+        } catch (IOException e) {
+            // Log file doesn't exist or can't be read - that's fine
+        }
     }
 
     public synchronized void removeUserData(String username) {
